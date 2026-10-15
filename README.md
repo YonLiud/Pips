@@ -1,6 +1,9 @@
 # Pips
 
-Local-first proof of concept for a private ChatGPT-subscription-backed Codex session manager.
+Local-first private ChatGPT-subscription-backed Codex session manager.
+
+<img width="1600" height="1200" alt="pips-launch-poster" src="https://github.com/user-attachments/assets/bdbb48e5-13d6-4a66-9a49-1b7eaaf97ce0" />
+
 
 ## The application
 
