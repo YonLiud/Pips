@@ -1,0 +1,72 @@
+name: pips
+
+services:
+  web:
+    build:
+      context: .
+      args:
+        CODEX_VERSION: ${CODEX_VERSION:-0.149.1}
+    restart: unless-stopped
+    command: ["npm", "run", "dev"]
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PIPS_HOST: 0.0.0.0
+      PIPS_PORT: "3000"
+      PIPS_UNAUTHENTICATED: "false"
+      PIPS_ALLOWED_HOSTS: pips.yonliud.dev
+      PIPS_PUBLIC_URL: https://pips.yonliud.dev
+      PIPS_OIDC_ISSUER: https://id.yonliud.dev
+      PIPS_DATA_DIR: /data
+    volumes:
+      - app-data:/data
+    networks:
+      - internal
+      - proxy
+    init: true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz',{headers:{host:'pips.yonliud.dev'}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.pips.rule=Host(`pips.yonliud.dev`)"
+      - "traefik.http.routers.pips.entrypoints=websecure"
+      - "traefik.http.routers.pips.tls=true"
+      - "traefik.http.routers.pips.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.pips.service=pips"
+      - "traefik.http.services.pips.loadbalancer.server.port=3000"
+
+  worker:
+    build:
+      context: .
+      args:
+        CODEX_VERSION: ${CODEX_VERSION:-0.149.1}
+    restart: unless-stopped
+    command: ["npm", "run", "worker"]
+    environment:
+      NODE_ENV: production
+      CODEX_HOME: /home/node/.codex
+      PIPS_DATA_DIR: /data
+    volumes:
+      - codex-home:/home/node/.codex
+      - app-data:/data
+    networks:
+      - internal
+    init: true
+
+networks:
+  internal:
+    name: pips-internal
+  proxy:
+    external: true
+
+volumes:
+  codex-home:
+    name: pips-codex-home
+  app-data:
+    name: pips-app-data

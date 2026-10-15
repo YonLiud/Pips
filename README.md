@@ -68,6 +68,13 @@ docker compose logs -f worker
 
 Complete device login in your browser. Stop any existing worker before the setup command. The worker volume preserves credentials and provider state across container recreation. Never delete it with `down -v` unless you intend to remove those records. Never commit or share auth caches. Compose publishes port 3000, but the API accepts only loopback hosts unless the explicit LAN settings above are enabled. This Compose file is for local development, without Traefik.
 
+On the VPS, copy `.env.production.example` to `.env` and use
+`compose.prod.yaml`. It keeps port 3000 off the host,
+joins the web service to the existing external Traefik `proxy` network, and
+routes `pips.yonliud.dev` through the `websecure` entrypoint. The worker stays
+on the private application network and is the only service with the persistent
+Codex credential volume.
+
 The worker checks ChatGPT account type before claiming queued work. It uses a read-only sandbox, rejects interactive permission requests, and runs one turn globally. Each Pip retains its thread mapping and has a separate working directory. After a clean restart, uncertain runs are marked interrupted. After a hard crash, the exclusive `data/worker.lock` deliberately blocks restart: confirm the previous worker and runtime are stopped, review uncertain work, then remove that lock from the app-data volume and restart. No automatic replay or API-key fallback.
 
 ## Verification
