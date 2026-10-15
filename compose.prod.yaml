@@ -39,6 +39,9 @@ services:
       - "traefik.http.routers.pips.tls=true"
       - "traefik.http.routers.pips.tls.certresolver=letsencrypt"
       - "traefik.http.routers.pips.service=pips"
+      - "traefik.http.routers.pips-tunnel.rule=Host(`pips.yonliud.dev`)"
+      - "traefik.http.routers.pips-tunnel.entrypoints=web"
+      - "traefik.http.routers.pips-tunnel.service=pips"
       - "traefik.http.services.pips.loadbalancer.server.port=3000"
 
   worker:
