@@ -4,6 +4,7 @@ const activeStatuses = new Set(['queued', 'running', 'cancelling']);
 const pipColors = ['peach', 'rose', 'orange', 'mint', 'teal', 'blue', 'violet', 'slate'];
 const pipShapes = ['round', 'pebble', 'square', 'capsule', 'triangle', 'hex'];
 let modelMenuTimer = 0;
+const linkPreviewCache = new Map();
 const templates = {
   Builder: { name: 'Chip', color: 'mint', instructions: 'Help me design and build software. Explain tradeoffs clearly, inspect evidence, and keep changes focused. Ask when a consequential requirement is unclear.' },
   Researcher: { name: 'Scout', color: 'violet', instructions: 'Help me investigate ideas. Separate evidence from assumptions, identify gaps, and give concise, well-supported answers. Never invent sources.' },
@@ -132,14 +133,94 @@ function renderHome() {
     const arrow = element('span', 'recent-arrow'); arrow.append(svgIcon('M5 12h14M14 7l5 5-5 5')); node.append(avatar(pip), copy, arrow); return node;
   }));
 }
-function formattedOutput(text) {
-  const node = element('div', 'run-output');
-  // Render only fenced code specially; all model content remains text, never executable HTML.
-  const chunks = text.split('```');
-  chunks.forEach((chunk, i) => {
-    if (i % 2) { const newline = chunk.indexOf('\n'); node.append(element('pre', '', newline >= 0 ? chunk.slice(newline + 1) : chunk)); }
-    else node.append(document.createTextNode(chunk));
-  }); return node;
+function safeUrl(raw, image = false) {
+  try {
+    const url = new URL(raw, location.href);
+    if (url.protocol === 'https:' || url.protocol === 'http:' || (!image && url.protocol === 'mailto:')) return url.href;
+  } catch {}
+  return '';
+}
+async function loadLinkPreview(wrapper, url) {
+  if (wrapper.dataset.loaded) return; wrapper.dataset.loaded = 'true';
+  try {
+    let data = linkPreviewCache.get(url);
+    if (!data) { data = await api('/api/link-preview?url=' + encodeURIComponent(url)); linkPreviewCache.set(url, data); }
+    const preview = wrapper.querySelector('.link-preview'); const copy = preview.querySelector('.link-preview-copy');
+    copy.replaceChildren(element('strong', '', data.title), element('small', '', data.siteName), element('span', '', data.description || new URL(data.url).pathname));
+    if (data.image) { const image = document.createElement('img'); image.src = data.image; image.alt = ''; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; preview.prepend(image); }
+  } catch { wrapper.classList.add('preview-unavailable'); }
+}
+function inlineMarkdown(text) {
+  const fragment = document.createDocumentFragment();
+  const pattern = /(!?\[[^\]]*\]\([^\s)]+(?:\s+"[^"]*")?\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_)/g;
+  let offset = 0;
+  for (const match of text.matchAll(pattern)) {
+    fragment.append(document.createTextNode(text.slice(offset, match.index)));
+    const token = match[0];
+    const link = token.match(/^(!?)\[([^\]]*)\]\(([^\s)]+)(?:\s+"([^"]*)")?\)$/);
+    if (link) {
+      const isImage = link[1] === '!'; const url = safeUrl(link[3], isImage);
+      if (!url) fragment.append(document.createTextNode(token));
+      else if (isImage) {
+        const img = document.createElement('img'); img.src = url; img.alt = link[2]; img.loading = 'lazy'; img.decoding = 'async';
+        if (link[4]) img.title = link[4]; fragment.append(img);
+      } else {
+        const wrapper = element('span', 'link-with-preview');
+        const anchor = document.createElement('a'); anchor.href = url; anchor.target = '_blank'; anchor.rel = 'noopener noreferrer'; anchor.append(inlineMarkdown(link[2]));
+        if (link[4]) anchor.title = link[4];
+        const destination = new URL(url); const preview = element('span', 'link-preview'); preview.setAttribute('aria-hidden', 'true');
+        preview.append(element('span', 'link-preview-icon', destination.hostname.slice(0, 1).toUpperCase()), element('span', 'link-preview-copy'));
+        preview.lastChild.append(element('strong', '', link[2] || destination.hostname), element('small', '', destination.hostname), element('span', '', `${destination.pathname}${destination.search}`));
+        wrapper.append(anchor, preview); anchor.addEventListener('mouseenter', () => loadLinkPreview(wrapper, url), { once: true }); anchor.addEventListener('focus', () => loadLinkPreview(wrapper, url), { once: true }); fragment.append(wrapper);
+      }
+    } else if (token.startsWith('`')) fragment.append(element('code', '', token.slice(1, -1)));
+    else {
+      const strong = token.startsWith('**') || token.startsWith('__');
+      const mark = element(strong ? 'strong' : 'em'); mark.append(inlineMarkdown(token.slice(strong ? 2 : 1, strong ? -2 : -1))); fragment.append(mark);
+    }
+    offset = match.index + token.length;
+  }
+  fragment.append(document.createTextNode(text.slice(offset))); return fragment;
+}
+function formattedOutput(text, className = '') {
+  const node = element('div', `run-output markdown-body${className ? ` ${className}` : ''}`); const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    if (line.startsWith('```')) {
+      const language = line.slice(3).trim(); const code = []; i++;
+      while (i < lines.length && !lines[i].startsWith('```')) code.push(lines[i++]);
+      if (i < lines.length) i++;
+      const pre = document.createElement('pre'); pre.append(element('code', language ? `language-${language}` : '', code.join('\n'))); node.append(pre); continue;
+    }
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) { const h = document.createElement(`h${heading[1].length}`); h.append(inlineMarkdown(heading[2])); node.append(h); i++; continue; }
+    if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) { node.append(document.createElement('hr')); i++; continue; }
+    if (/^>\s?/.test(line)) {
+      const quote = []; while (i < lines.length && /^>\s?/.test(lines[i])) quote.push(lines[i++].replace(/^>\s?/, ''));
+      const block = document.createElement('blockquote'); block.append(...formattedOutput(quote.join('\n')).childNodes); node.append(block); continue;
+    }
+    const listMatch = line.match(/^\s*(?:([-+*])|(\d+)\.)\s+(.+)$/);
+    if (listMatch) {
+      const ordered = Boolean(listMatch[2]); const list = document.createElement(ordered ? 'ol' : 'ul');
+      while (i < lines.length) {
+        const item = lines[i].match(/^\s*(?:([-+*])|(\d+)\.)\s+(.+)$/); if (!item || Boolean(item[2]) !== ordered) break;
+        const li = document.createElement('li'); li.append(inlineMarkdown(item[3])); list.append(li); i++;
+      }
+      node.append(list); continue;
+    }
+    const paragraph = [line]; i++;
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6})\s+|^```|^>\s?|^\s*(?:[-+*]|\d+\.)\s+/.test(lines[i])) paragraph.push(lines[i++]);
+    const p = document.createElement('p'); p.append(inlineMarkdown(paragraph.join('\n'))); node.append(p);
+  }
+  return node;
+}
+function commentarySection(text, active) {
+  const section = document.createElement('details'); section.className = 'commentary-section';
+  const summary = document.createElement('summary');
+  summary.append(element('span', 'commentary-chevron', '›'), element('span', '', active ? 'Live work notes' : 'Work notes'));
+  section.append(summary, formattedOutput(text, 'commentary-content')); return section;
 }
 function renderChat(pip) {
   const signature = JSON.stringify([pip?.id, pip?.name, pip?.color, state.runs]); if (signature === state.chatSignature) return; state.chatSignature = signature;
@@ -149,7 +230,8 @@ function renderChat(pip) {
     const node = element('article', 'message'); node.append(element('div', 'user-message', run.prompt));
     const heading = element('div', 'assistant-heading'); heading.append(avatar(pip, run.status), element('b', '', pip.name), element('span', 'run-badge', [run.model, run.status.replaceAll('_', ' ')].filter(Boolean).join(' · '))); node.append(heading);
     if (run.output) node.append(formattedOutput(run.output));
-    else { const pending = element('div', 'run-output'); pending.append(element('span', 'pending', run.status === 'queued' ? 'In the queue. Your Pip will pick this up when the worker is ready.' : run.status === 'running' ? 'Thinking it through…' : run.status === 'cancelling' ? 'Waiting for the runtime to stop…' : 'No response was recorded.')); node.append(pending); }
+    else if (!run.commentary) { const pending = element('div', 'run-output'); pending.append(element('span', 'pending', run.status === 'queued' ? 'In the queue. Your Pip will pick this up when the worker is ready.' : run.status === 'running' ? 'Thinking it through…' : run.status === 'cancelling' ? 'Waiting for the runtime to stop…' : 'No response was recorded.')); node.append(pending); }
+    if (run.commentary) node.append(commentarySection(run.commentary, activeStatuses.has(run.status)));
     if (run.error) node.append(element('div', 'run-error', run.error));
     const actions = element('div', 'run-actions');
     if (activeStatuses.has(run.status)) actions.append(button(run.status === 'queued' ? 'Cancel queued run' : 'Stop run', async () => { try { await api('/api/runs/' + run.id + '/cancel', { method: 'POST', body: {} }); await refresh(); } catch (e) { showError(e); } }));

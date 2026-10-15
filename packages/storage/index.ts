@@ -21,6 +21,7 @@ for (const [name, definition] of [['instructions', "TEXT NOT NULL DEFAULT ''"], 
 }
 if (!db.prepare('PRAGMA table_info(runs)').all().some((c: any) => c.name === 'request_id')) db.exec('ALTER TABLE runs ADD COLUMN request_id TEXT');
 if (!db.prepare('PRAGMA table_info(runs)').all().some((c: any) => c.name === 'model')) db.exec('ALTER TABLE runs ADD COLUMN model TEXT');
+if (!db.prepare('PRAGMA table_info(runs)').all().some((c: any) => c.name === 'commentary')) db.exec("ALTER TABLE runs ADD COLUMN commentary TEXT NOT NULL DEFAULT ''");
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS runs_request_id ON runs(request_id) WHERE request_id IS NOT NULL; CREATE INDEX IF NOT EXISTS runs_pip_created ON runs(pip_id,created); CREATE INDEX IF NOT EXISTS events_run_id ON events(run_id,id);');
 export function event(runId: string, kind: string, payload: unknown) {
   db.prepare('INSERT INTO events(run_id,kind,payload) VALUES(?,?,?)').run(runId, kind, JSON.stringify(payload));

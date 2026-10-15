@@ -3,6 +3,8 @@ import cookie from '@fastify/cookie';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { createHash, randomBytes } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import * as oidc from 'openid-client';
 import { db, createPip, enqueue, event } from '../../packages/storage/index.ts';
 
@@ -26,6 +28,51 @@ if (!unauthenticated && (publicUrl!.protocol !== 'https:' || issuer!.protocol !=
 const sessionCookie = '__Host-pips-session';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const randomToken = () => randomBytes(32).toString('base64url');
+const previewCache = new Map<string, { expires: number, value: any }>();
+function privateAddress(address: string) {
+  if (address === '::1' || address === '::' || address.startsWith('fc') || address.startsWith('fd') || address.startsWith('fe8') || address.startsWith('fe9') || address.startsWith('fea') || address.startsWith('feb')) return true;
+  const mapped = address.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i); if (mapped) address = mapped[1];
+  if (isIP(address) !== 4) return false;
+  const [a, b] = address.split('.').map(Number);
+  return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 198 && (b === 18 || b === 19));
+}
+async function checkedPreviewUrl(raw: string) {
+  const url = new URL(raw); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || !url.hostname) throw new Error('Only public HTTP(S) links can be previewed');
+  if (url.port && !['80', '443'].includes(url.port)) throw new Error('Non-standard ports cannot be previewed');
+  const addresses = await lookup(url.hostname, { all: true });
+  if (!addresses.length || addresses.some(item => privateAddress(item.address))) throw new Error('Private network links cannot be previewed');
+  return url;
+}
+function decodeHtml(value = '') {
+  const named: Record<string, string> = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ' };
+  return value.replace(/&(#x[\da-f]+|#\d+|\w+);/gi, (_, entity) => entity[0] === '#' ? String.fromCodePoint(Number(entity[1].toLowerCase() === 'x' ? `0x${entity.slice(2)}` : entity.slice(1))) : named[entity.toLowerCase()] || `&${entity};`).trim();
+}
+function metadata(html: string, page: URL) {
+  const values = new Map<string, string>();
+  for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
+    const attrs = new Map<string, string>();
+    for (const match of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g)) attrs.set(match[1].toLowerCase(), decodeHtml(match[2] ?? match[3] ?? match[4] ?? ''));
+    const key = (attrs.get('property') || attrs.get('name') || '').toLowerCase(); if (key && attrs.get('content')) values.set(key, attrs.get('content')!);
+  }
+  const title = values.get('og:title') || decodeHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g, '') || '') || page.hostname;
+  const imageRaw = values.get('og:image') || values.get('twitter:image') || ''; let image = '';
+  try { const candidate = new URL(imageRaw, page); if (['http:', 'https:'].includes(candidate.protocol)) image = candidate.href; } catch {}
+  return { url: page.href, title: title.slice(0, 240), description: (values.get('og:description') || values.get('description') || '').slice(0, 500), siteName: (values.get('og:site_name') || page.hostname).slice(0, 120), image };
+}
+async function fetchPreview(raw: string) {
+  const cached = previewCache.get(raw); if (cached && cached.expires > Date.now()) return cached.value;
+  let url = await checkedPreviewUrl(raw);
+  for (let redirects = 0; redirects < 4; redirects++) {
+    const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(5000), headers: { Accept: 'text/html,application/xhtml+xml', 'User-Agent': 'Pips-Link-Preview/0.1' } });
+    if (response.status >= 300 && response.status < 400 && response.headers.get('location')) { url = await checkedPreviewUrl(new URL(response.headers.get('location')!, url).href); continue; }
+    if (!response.ok || !response.headers.get('content-type')?.toLowerCase().includes('text/html')) throw new Error('Link did not return an HTML page');
+    const reader = response.body?.getReader(); const chunks: Uint8Array[] = []; let size = 0;
+    while (reader) { const part = await reader.read(); if (part.done) break; size += part.value.byteLength; if (size > 524288) { await reader.cancel(); break; } chunks.push(part.value); }
+    const html = new TextDecoder().decode(Buffer.concat(chunks)); const value = metadata(html, url);
+    if (previewCache.size >= 200) previewCache.delete(previewCache.keys().next().value!); previewCache.set(raw, { expires: Date.now() + 30 * 60 * 1000, value }); return value;
+  }
+  throw new Error('Too many redirects');
+}
 let oidcConfiguration: Promise<oidc.Configuration> | null = null;
 function configuration() {
   oidcConfiguration ||= oidc.discovery(issuer!, process.env.PIPS_OIDC_CLIENT_ID!, undefined, oidc.ClientSecretPost(process.env.PIPS_OIDC_CLIENT_SECRET!));
@@ -111,6 +158,10 @@ app.get('/api/runtime', async () => {
 app.get('/api/models', async () => {
   const models = db.prepare('SELECT model,display_name,description,is_default FROM runtime_models ORDER BY position').all();
   return { models, catalog_ready: models.length > 0 };
+});
+app.get('/api/link-preview', { schema: { querystring: { type: 'object', required: ['url'], additionalProperties: false, properties: { url: { type: 'string', minLength: 1, maxLength: 2048 } } } } }, async (req: any, reply) => {
+  try { return await fetchPreview(req.query.url); }
+  catch (error: any) { return reply.code(422).send({ error: error.message || 'Link preview unavailable' }); }
 });
 app.get('/api/pips', async () => db.prepare(`SELECT pips.*,
   (SELECT status FROM runs WHERE pip_id=pips.id ORDER BY created DESC,rowid DESC LIMIT 1) AS last_status,

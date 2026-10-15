@@ -14,6 +14,7 @@ test('local API enforces origin checks and connects Pip/profile/queue/archive fl
     assert.equal((await app.inject({ method: 'GET', url: '/app.js' })).statusCode, 200);
     assert.equal((await app.inject({ method: 'GET', url: '/api/pips', headers: { host: '[::1]:3000' } })).statusCode, 200);
     assert.equal((await app.inject({ method: 'GET', url: '/api/pips', headers: { host: 'attacker.test' } })).statusCode, 403);
+    assert.equal((await app.inject({ method: 'GET', url: '/api/link-preview?url=http%3A%2F%2F127.0.0.1' })).statusCode, 422);
     assert.equal((await app.inject({ method: 'POST', url: '/api/pips', payload: { name: 'Blocked' } })).statusCode, 403);
     assert.equal((await app.inject({ method: 'POST', url: '/api/pips', headers: { ...headers, origin: 'https://attacker.test' }, payload: { name: 'Blocked' } })).statusCode, 403);
     assert.equal((await app.inject({ method: 'POST', url: '/api/pips', headers, payload: { name: '   ' } })).statusCode, 400);

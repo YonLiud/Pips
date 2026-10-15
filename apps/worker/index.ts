@@ -14,14 +14,21 @@ let active: any = null;
 let turnId: string | null = null;
 let done: ((status: string) => void) | null = null;
 let fatal: Error | null = null;
+const messagePhases = new Map<string, 'commentary' | 'final_answer' | null>();
 codex.on('offline', e => { fatal = e; done?.('interrupted'); });
 codex.on('notice', msg => {
   if (!active || (msg.params?.threadId && msg.params.threadId !== active.thread_id)) return;
+  if (msg.method === 'item/started' && msg.params?.item?.type === 'agentMessage') {
+    messagePhases.set(msg.params.item.id, msg.params.item.phase || null);
+  }
   if (msg.method === 'item/agentMessage/delta') {
     const text = msg.params.delta || '';
-    db.prepare('UPDATE runs SET output=output || ? WHERE id=?').run(text, active.id);
-    event(active.id, 'delta', { text });
+    const phase = messagePhases.get(msg.params.itemId) || null;
+    const column = phase === 'commentary' ? 'commentary' : 'output';
+    db.prepare(`UPDATE runs SET ${column}=${column} || ? WHERE id=?`).run(text, active.id);
+    event(active.id, 'delta', { text, phase, itemId: msg.params.itemId });
   }
+  if (msg.method === 'item/completed' && msg.params?.item?.type === 'agentMessage') messagePhases.delete(msg.params.item.id);
   if (msg.method === 'pips/requestRejected') event(active.id, 'tool_request_rejected', msg.params);
   if (msg.method === 'error' || (msg.method === 'turn/completed' && msg.params.turn.error)) {
     const error = msg.params?.turn?.error?.message || msg.params?.error?.message || msg.params?.message || 'Runtime error';
@@ -94,7 +101,7 @@ try {
     } catch (e: any) {
       db.prepare("UPDATE runs SET status='failed',error=? WHERE id=?").run(e.message, run.id);
       event(run.id, 'failed', { message: e.message });
-    } finally { active = null; done = null; }
+    } finally { active = null; done = null; messagePhases.clear(); }
   }
       if (fatal && !stopping) throw fatal;
 } catch (e: any) { runtime('unavailable'); console.error(e.message); process.exitCode = 1; }
