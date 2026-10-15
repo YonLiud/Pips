@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f7f5fa">
+  <title>Pips</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-top">
+      <a class="brand" href="/" aria-label="Pips home"><span class="brand-mark">p</span><span>Pips</span><span class="local-label">Private</span></a>
+      <button class="new-pip" id="new-pip"><span aria-hidden="true">＋</span> New conversation <kbd>N</kbd></button>
+      <label class="search"><span aria-hidden="true">⌕</span><input id="search" placeholder="Search conversations" aria-label="Search conversations"></label>
+    </div>
+    <div class="list-heading"><span id="list-label">Conversations</span><button id="show-archived" class="text-button">Archived</button></div>
+    <nav id="pip-list" aria-label="Your conversations"></nav>
+    <div class="sidebar-bottom">
+      <div class="theme-picker" role="group" aria-label="Color theme"><button type="button" data-theme="light" title="Light theme" aria-label="Light theme">☀</button><button type="button" data-theme="system" title="System theme" aria-label="System theme">◐</button><button type="button" data-theme="dark" title="Dark theme" aria-label="Dark theme">☾</button></div>
+      <button id="settings" class="footer-button"><span>Workspace</span><span aria-hidden="true">›</span></button>
+    </div>
+  </aside>
+  <button class="sidebar-scrim" id="sidebar-scrim" aria-label="Close conversations"></button>
+  <main>
+    <header>
+      <button id="menu" class="icon-button mobile-only" aria-label="Open conversations">☰</button>
+      <div class="conversation-title"><b id="current-name">Pips</b><span id="conversation-subtitle">Your private AI team</span></div>
+      <div class="header-right"><button id="details-toggle" class="icon-button more-button" aria-label="Conversation details">•••</button></div>
+    </header>
+    <div id="error" class="error-banner" role="alert" hidden><span></span><button aria-label="Dismiss error">×</button></div>
+    <div class="workspace">
+      <section class="conversation">
+        <div id="welcome" class="welcome">
+          <div class="pip-orb" aria-hidden="true"><span>p</span></div>
+          <p class="welcome-kicker">Your ideas have company</p>
+          <h1>What are we<br>working on?</h1>
+          <p>Start a conversation with a focused Pip. It keeps the context, does the work, and stays with you when you leave.</p>
+          <div class="suggestions">
+            <button data-template="Builder"><span class="suggestion-icon">⌘</span><span><b>Build something</b><small>Design, code, and ship</small></span></button>
+            <button data-template="Researcher"><span class="suggestion-icon">⌕</span><span><b>Research a question</b><small>Find evidence and make sense of it</small></span></button>
+            <button data-template="Planner"><span class="suggestion-icon">↗</span><span><b>Make a plan</b><small>Turn a big idea into next steps</small></span></button>
+          </div>
+        </div>
+        <div id="chat" class="chat" aria-live="polite" hidden></div>
+        <div id="composer-wrap" class="composer-wrap" hidden>
+          <form id="composer"><textarea id="prompt" rows="1" maxlength="32000" aria-label="Message your Pip" placeholder="Message your Pip…"></textarea><div class="composer-bottom"><label class="model-control" title="Model for the next message"><span class="model-spark">✦</span><select id="model" aria-label="Choose model"><option value="">Default model</option></select></label><button id="send" type="submit" aria-label="Send message">↑</button></div></form>
+          <p class="composer-note">Enter to send · Shift + Enter for a new line</p>
+        </div>
+      </section>
+      <aside class="details" id="details"><div class="details-title"><span>Conversation details</span><button id="close-details" class="icon-button" aria-label="Close details">×</button></div><div id="pip-details"><div class="empty-details"><h3>No conversation selected</h3><p>Choose a conversation to see its settings.</p></div></div><div class="runtime-card"><span class="eyebrow">Runtime</span><h3>Codex</h3><p>ChatGPT subscription</p><dl><dt>Worker</dt><dd id="worker-status">Checking</dd><dt>Concurrency</dt><dd>1 turn</dd><dt>Deployment</dt><dd>Docker Compose</dd></dl><small id="runtime-help">Checking your worker.</small></div></aside>
+    </div>
+  </main>
+  <dialog id="pip-dialog"><form id="pip-form"><div class="dialog-top"><span class="eyebrow" id="dialog-label">New Pip</span><button type="button" id="close-dialog" class="icon-button" aria-label="Close">×</button></div><h2 id="dialog-title">Create a Pip</h2><p class="muted">Give your new conversation a name and a clear purpose.</p><label>Name<input id="pip-name" required maxlength="80" placeholder="Research, coding, planning…"></label><label>Instructions <span class="muted">optional</span><textarea id="pip-instructions" rows="4" maxlength="8000" placeholder="How should this Pip help?"></textarea></label><label>Accent<select id="pip-color"><option value="mint">Mint</option><option value="violet">Violet</option><option value="peach">Peach</option><option value="blue">Blue</option></select></label><p id="form-error" class="form-error" role="alert"></p><button id="save-pip" class="primary" type="submit">Create Pip</button></form></dialog>
+  <dialog id="workspace-dialog"><div class="dialog-top"><span class="eyebrow">Workspace</span><button class="icon-button" id="close-workspace" aria-label="Close">×</button></div><h2>Private workspace</h2><p>Web login is temporarily disabled. Codex still uses your ChatGPT subscription.</p><dl><dt>Web authentication</dt><dd>Disabled</dd><dt>Model access</dt><dd>ChatGPT subscription</dd><dt>Infrastructure</dt><dd>Docker Compose</dd><dt>Tools</dt><dd>Read-only</dd></dl></dialog>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

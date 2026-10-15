@@ -1,0 +1,42 @@
+name: pips-local
+services:
+  web:
+    build:
+      context: .
+      args:
+        CODEX_VERSION: ${CODEX_VERSION:-0.149.1}
+    command: ["npm", "run", "dev"]
+    ports:
+      - "3000:3000"
+    environment:
+      PIPS_HOST: 0.0.0.0
+      PIPS_PORT: "3000"
+      PIPS_CONTAINER_LOCAL: "true"
+      PIPS_UNAUTHENTICATED: ${PIPS_UNAUTHENTICATED:-false}
+      PIPS_ALLOW_LAN: ${PIPS_ALLOW_LAN:-false}
+      PIPS_ALLOWED_HOSTS: ${PIPS_ALLOWED_HOSTS:-}
+      PIPS_PUBLIC_URL: ${PIPS_PUBLIC_URL:-}
+      PIPS_OIDC_ISSUER: ${PIPS_OIDC_ISSUER:-}
+      PIPS_OIDC_CLIENT_ID: ${PIPS_OIDC_CLIENT_ID:-}
+      PIPS_OIDC_CLIENT_SECRET: ${PIPS_OIDC_CLIENT_SECRET:-}
+      PIPS_OWNER_SUBJECT: ${PIPS_OWNER_SUBJECT:-}
+      PIPS_DATA_DIR: /data
+    volumes:
+      - app-data:/data
+    init: true
+  worker:
+    build:
+      context: .
+      args:
+        CODEX_VERSION: ${CODEX_VERSION:-0.149.1}
+    command: ["npm", "run", "worker"]
+    environment:
+      CODEX_HOME: /home/node/.codex
+      PIPS_DATA_DIR: /data
+    volumes:
+      - codex-home:/home/node/.codex
+      - app-data:/data
+    init: true
+volumes:
+  codex-home:
+  app-data:
