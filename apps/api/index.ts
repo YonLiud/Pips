@@ -115,13 +115,13 @@ app.get('/api/models', async () => {
 app.get('/api/pips', async () => db.prepare(`SELECT pips.*,
   (SELECT status FROM runs WHERE pip_id=pips.id ORDER BY created DESC,rowid DESC LIMIT 1) AS last_status,
   (SELECT count(*) FROM runs WHERE pip_id=pips.id) AS run_count FROM pips ORDER BY created DESC`).all());
-const profileProperties = { name: { type: 'string', minLength: 1, maxLength: 80, pattern: '\\S' }, instructions: { type: 'string', maxLength: 8000 }, color: { type: 'string', enum: ['mint', 'violet', 'peach', 'blue'] } };
-app.post('/api/pips', { schema: { body: { type: 'object', required: ['name'], additionalProperties: false, properties: profileProperties } } }, async (req: any, reply) => reply.code(201).send(createPip(req.body.name.trim(), req.body.instructions || '', req.body.color || 'mint')));
+const profileProperties = { name: { type: 'string', minLength: 1, maxLength: 80, pattern: '\\S' }, instructions: { type: 'string', maxLength: 8000 }, color: { type: 'string', enum: ['mint', 'violet', 'peach', 'blue', 'rose', 'orange', 'teal', 'slate'] }, shape: { type: 'string', enum: ['round', 'pebble', 'square', 'capsule', 'triangle', 'hex'] } };
+app.post('/api/pips', { schema: { body: { type: 'object', required: ['name'], additionalProperties: false, properties: profileProperties } } }, async (req: any, reply) => reply.code(201).send(createPip(req.body.name.trim(), req.body.instructions || '', req.body.color || 'violet', req.body.shape || 'round')));
 app.patch('/api/pips/:id', { schema: { body: { type: 'object', additionalProperties: false, properties: { ...profileProperties, archived: { type: 'boolean' } } } } }, async (req: any, reply) => {
   const pip: any = db.prepare('SELECT * FROM pips WHERE id=?').get(req.params.id);
   if (!pip) return reply.code(404).send({ error: 'Pip not found' });
   if (db.prepare("SELECT id FROM runs WHERE pip_id=? AND status IN ('queued','running','cancelling') LIMIT 1").get(pip.id)) return reply.code(409).send({ error: 'Finish or cancel queued work before changing this Pip' });
-  db.prepare('UPDATE pips SET name=?,instructions=?,color=?,archived=? WHERE id=?').run(req.body.name?.trim() || pip.name, req.body.instructions ?? pip.instructions, req.body.color ?? pip.color, req.body.archived === undefined ? pip.archived : Number(req.body.archived), pip.id);
+  db.prepare('UPDATE pips SET name=?,instructions=?,color=?,shape=?,archived=? WHERE id=?').run(req.body.name?.trim() || pip.name, req.body.instructions ?? pip.instructions, req.body.color ?? pip.color, req.body.shape ?? pip.shape, req.body.archived === undefined ? pip.archived : Number(req.body.archived), pip.id);
   return db.prepare('SELECT * FROM pips WHERE id=?').get(pip.id);
 });
 app.get('/api/pips/:id/runs', async (req: any) => db.prepare('SELECT * FROM runs WHERE pip_id=? ORDER BY created').all(req.params.id));

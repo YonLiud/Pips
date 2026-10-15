@@ -23,6 +23,11 @@ test('Pocket ID mode protects APIs and requires CSRF for mutations', async () =>
   db.prepare('INSERT INTO auth_sessions(token_hash,issuer,subject,email,name,csrf_token,created,last_seen,expires) VALUES(?,?,?,?,?,?,?,?,?)').run(digest, 'https://id.test', 'owner-subject', 'owner@example.test', 'Owner', csrf, now.toISOString(), now.toISOString(), new Date(now.getTime() + 60000).toISOString());
   const host = { host: 'pips.test' }; const authenticated = { ...host, cookie: `__Host-pips-session=${token}` };
   try {
+    const landing = await app.inject({ method: 'GET', url: '/', headers: host });
+    assert.equal(landing.statusCode, 200);
+    assert.match(landing.body, /Your private AI team/);
+    assert.equal((await app.inject({ method: 'GET', url: '/app', headers: host })).statusCode, 302);
+    assert.equal((await app.inject({ method: 'GET', url: '/app', headers: authenticated })).statusCode, 200);
     assert.equal((await app.inject({ method: 'GET', url: '/api/pips', headers: host })).statusCode, 401);
     assert.equal((await app.inject({ method: 'GET', url: '/api/session', headers: authenticated })).statusCode, 200);
     assert.equal((await app.inject({ method: 'POST', url: '/api/pips', headers: authenticated, payload: { name: 'Blocked' } })).statusCode, 403);

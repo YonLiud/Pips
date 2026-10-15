@@ -9,7 +9,7 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:api": "node --experimental-strip-types --test tests/integration/*.test.ts",
     "runtime:probe": "node scripts/runtime-probe.mjs",
-    "check": "node --experimental-strip-types --check apps/api/index.ts && node --experimental-strip-types --check apps/worker/index.ts && node --experimental-strip-types --check packages/codex/index.ts && node --experimental-strip-types --check packages/storage/index.ts && node --check apps/web/app.js"
+    "check": "node --experimental-strip-types --check apps/api/index.ts && node --experimental-strip-types --check apps/worker/index.ts && node --experimental-strip-types --check packages/codex/index.ts && node --experimental-strip-types --check packages/storage/index.ts && node --check apps/web/app.js && node --check apps/web/landing.js"
   },
   "engines": {
     "node": ">=22.21.0"

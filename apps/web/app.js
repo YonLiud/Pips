@@ -1,6 +1,9 @@
 const $ = id => document.getElementById(id);
-const state = { pips: [], selected: localStorage.getItem('pips:selected') || '', archived: false, runs: [], models: [], csrf: null, editing: null, loading: false, sending: false, chatSignature: '', navSignature: '', detailsSignature: '' };
+const state = { pips: [], selected: '', archived: false, runs: [], models: [], csrf: null, user: null, editing: null, loading: false, sending: false, chatSignature: '', navSignature: '', detailsSignature: '', homeSignature: '' };
 const activeStatuses = new Set(['queued', 'running', 'cancelling']);
+const pipColors = ['peach', 'rose', 'orange', 'mint', 'teal', 'blue', 'violet', 'slate'];
+const pipShapes = ['round', 'pebble', 'square', 'capsule', 'triangle', 'hex'];
+let modelMenuTimer = 0;
 const templates = {
   Builder: { name: 'Chip', color: 'mint', instructions: 'Help me design and build software. Explain tradeoffs clearly, inspect evidence, and keep changes focused. Ask when a consequential requirement is unclear.' },
   Researcher: { name: 'Scout', color: 'violet', instructions: 'Help me investigate ideas. Separate evidence from assumptions, identify gaps, and give concise, well-supported answers. Never invent sources.' },
@@ -8,6 +11,7 @@ const templates = {
 };
 function element(tag, className = '', text = '') { const node = document.createElement(tag); node.className = className; node.textContent = text; return node; }
 function button(text, fn) { const node = element('button', '', text); node.type = 'button'; node.addEventListener('click', fn); return node; }
+function svgIcon(path, className = '') { const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); if (className) svg.setAttribute('class', className); const shape = document.createElementNS(svg.namespaceURI, 'path'); shape.setAttribute('d', path); svg.append(shape); return svg; }
 function requestKey() {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -17,8 +21,8 @@ function requestKey() {
 }
 function hashString(value) { let hash = 2166136261; for (const char of value) { hash ^= char.codePointAt(0); hash = Math.imul(hash, 16777619); } return hash >>> 0; }
 function avatar(pip, status = pip.last_status) {
-  const seed = hashString(pip.id || pip.name); const node = element('div', `avatar creature creature-${seed % 6}${activeStatuses.has(status) ? ' is-working' : ''}`);
-  node.style.setProperty('--pip-color', `var(--${['mint', 'violet', 'peach', 'blue'].includes(pip.color) ? pip.color : 'mint'})`);
+  const seed = hashString(pip.id || pip.name); const shape = pipShapes.includes(pip.shape) ? pip.shape : pipShapes[seed % pipShapes.length]; const node = element('div', `avatar creature creature-${pipShapes.indexOf(shape)} shape-${shape}${activeStatuses.has(status) ? ' is-working' : ''}`);
+  node.style.setProperty('--pip-color', `var(--${pipColors.includes(pip.color) ? pip.color : 'violet'})`);
   node.style.setProperty('--tilt', `${(seed % 9) - 4}deg`); node.setAttribute('aria-hidden', 'true');
   const face = element('span', 'creature-face'); face.append(element('i', 'eye eye-left'), element('i', 'eye eye-right'), element('i', 'mouth'));
   node.append(element('i', 'creature-ear ear-left'), element('i', 'creature-ear ear-right'), face, element('i', 'work-ring')); return node;
@@ -37,6 +41,11 @@ async function api(path, { method = 'GET', body, key } = {}) {
   return result;
 }
 function selectedPip() { return state.pips.find(p => p.id === state.selected); }
+function showHome() {
+  if (state.selected) localStorage.setItem('pips:draft:' + state.selected, $('prompt').value);
+  state.selected = ''; state.runs = []; state.chatSignature = ''; state.detailsSignature = ''; state.navSignature = '';
+  localStorage.removeItem('pips:selected'); $('sidebar').classList.remove('open'); $('details').classList.remove('open'); render();
+}
 function selectPip(id) {
   if (state.selected) localStorage.setItem('pips:draft:' + state.selected, $('prompt').value);
   state.selected = id; state.runs = []; state.chatSignature = ''; state.detailsSignature = ''; state.navSignature = '';
@@ -45,12 +54,22 @@ function selectPip(id) {
 }
 function openEditor(pip = null, template = null) {
   state.editing = pip?.id || null;
-  const profile = pip || template || { name: '', instructions: '', color: 'mint' };
-  $('pip-name').value = profile.name; $('pip-instructions').value = profile.instructions; $('pip-color').value = profile.color;
+  const profile = pip || template || { name: 'New Pip', instructions: '', color: 'violet', shape: 'round' };
+  $('pip-name').value = profile.name || 'New Pip'; $('pip-instructions').value = profile.instructions || ''; $('pip-color').value = pipColors.includes(profile.color) ? profile.color : 'violet'; $('pip-shape').value = pipShapes.includes(profile.shape) ? profile.shape : 'round';
   $('dialog-label').textContent = pip ? 'Your Pip' : 'New Pip';
-  $('dialog-title').textContent = pip ? 'Tune this conversation' : 'Give your Pip a purpose';
+  $('dialog-title').textContent = pip ? 'Edit your Pip' : 'Make it yours';
   $('save-pip').textContent = pip ? 'Save changes' : 'Create Pip'; $('form-error').textContent = '';
+  $('pip-dialog').querySelector('.advanced').open = Boolean(profile.instructions && pip);
+  updateCreatorPreview();
   $('pip-dialog').showModal();
+  requestAnimationFrame(() => setTimeout(() => { $('pip-name').focus(); $('pip-name').select(); }, 0));
+}
+function updateCreatorPreview() {
+  const color = $('pip-color').value; const shape = $('pip-shape').value;
+  document.querySelectorAll('[data-color-choice]').forEach(node => node.setAttribute('aria-pressed', String(node.dataset.colorChoice === color)));
+  document.querySelectorAll('[data-shape-choice]').forEach(node => node.setAttribute('aria-pressed', String(node.dataset.shapeChoice === shape)));
+  const preview = avatar({ id: 'creator-preview', name: $('pip-name').value || 'New Pip', color, shape }); preview.classList.add('preview-avatar');
+  $('pip-preview').replaceChildren(preview);
 }
 function renderNav() {
   const visible = state.pips.filter(p => Boolean(p.archived) === state.archived && p.name.toLowerCase().includes($('search').value.toLowerCase()));
@@ -65,7 +84,7 @@ function renderNav() {
 }
 function renderDetails(pip) {
   const signature = JSON.stringify(pip || null); if (signature === state.detailsSignature) return; state.detailsSignature = signature;
-  if (!pip) { const empty = element('div', 'empty-details'); empty.append(element('span', '', '✦'), element('h3', '', 'Small team, big ideas.'), element('p', '', 'Each Pip has its own purpose, conversation, and workspace.')); $('pip-details').replaceChildren(empty); return; }
+  if (!pip) { const empty = element('div', 'empty-details'); empty.append(element('h3', '', 'Small team, big ideas.'), element('p', '', 'Each Pip has its own purpose, conversation, and workspace.')); $('pip-details').replaceChildren(empty); return; }
   const profile = element('div', 'profile'); profile.append(avatar(pip), element('h2', '', pip.name), element('p', '', pip.instructions || 'An open mind and a fresh conversation. Add instructions to give this Pip a focus.'));
   const actions = element('div', 'profile-actions');
   actions.append(button('Edit Pip', () => openEditor(pip)), button(pip.archived ? 'Restore' : 'Archive', async () => {
@@ -80,6 +99,38 @@ function renderModels() {
   state.models.forEach(item => options.push(new Option(item.display_name + (item.is_default ? ' · default' : ''), item.model)));
   $('model').replaceChildren(...options);
   $('model').value = state.models.some(item => item.model === selected) ? selected : '';
+  const choices = [{ model: '', display_name: 'Default model', is_default: true }, ...state.models];
+  $('model-menu').replaceChildren(...choices.map(item => {
+    const option = button('', () => chooseModel(item.model)); option.className = 'model-option'; option.setAttribute('role', 'option'); option.dataset.model = item.model;
+    option.setAttribute('aria-selected', String(item.model === $('model').value));
+    const copy = element('span'); copy.append(element('b', '', item.display_name), element('small', '', item.model ? (item.is_default ? 'Recommended for this workspace' : item.model) : 'Use the workspace recommendation'));
+    option.append(copy, svgIcon('m5 12 4 4L19 6', 'model-check')); return option;
+  }));
+  updateModelLabel();
+}
+function updateModelLabel() { const selected = [...$('model').options].find(option => option.value === $('model').value); $('model-label').textContent = selected?.textContent?.replace(' · default', '') || 'Default model'; document.querySelectorAll('.model-option').forEach(option => option.setAttribute('aria-selected', String(option.dataset.model === $('model').value))); }
+function closeModelMenu() {
+  const menu = $('model-menu'); if (menu.hidden || menu.classList.contains('is-closing')) return;
+  $('model-trigger').setAttribute('aria-expanded', 'false'); menu.classList.add('is-closing');
+  clearTimeout(modelMenuTimer); modelMenuTimer = setTimeout(() => { menu.hidden = true; menu.classList.remove('is-closing'); }, 130);
+}
+function chooseModel(value) { $('model').value = value; localStorage.setItem('pips:model', value); updateModelLabel(); closeModelMenu(); $('prompt').focus(); }
+function dismissDialog(dialog) {
+  if (!dialog?.open || dialog.dataset.closing) return;
+  dialog.dataset.closing = 'true'; dialog.classList.add('is-closing');
+  setTimeout(() => { dialog.close(); dialog.classList.remove('is-closing'); delete dialog.dataset.closing; }, 160);
+}
+function renderHome() {
+  const active = state.pips.filter(pip => !pip.archived).slice(0, 4);
+  const signature = JSON.stringify([active, state.user?.name]); if (signature === state.homeSignature) return; state.homeSignature = signature;
+  const hour = new Date().getHours(); const time = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const firstName = state.user?.name?.trim().split(/\s+/)[0]; $('home-greeting').textContent = `${time}${firstName ? `, ${firstName}` : ''}`;
+  $('recent').hidden = active.length === 0;
+  $('recent-list').replaceChildren(...active.map(pip => {
+    const node = button('', () => selectPip(pip.id)); node.className = 'recent-pip';
+    const copy = element('span', 'recent-copy'); copy.append(element('b', '', pip.name), element('small', '', pip.last_status ? pip.last_status.replaceAll('_', ' ') : 'Ready for an idea'));
+    const arrow = element('span', 'recent-arrow'); arrow.append(svgIcon('M5 12h14M14 7l5 5-5 5')); node.append(avatar(pip), copy, arrow); return node;
+  }));
 }
 function formattedOutput(text) {
   const node = element('div', 'run-output');
@@ -112,20 +163,23 @@ function renderChat(pip) {
 async function showActivity(run) {
   try {
     const events = await api('/api/runs/' + run.id + '/events');
-    const dialog = document.createElement('dialog'); const close = button('Close', () => dialog.close()); close.className = 'text-button';
+    const dialog = document.createElement('dialog'); const close = button('Close', () => dismissDialog(dialog)); close.className = 'text-button';
     dialog.append(element('h2', '', 'Run activity'), element('p', 'muted', run.id), element('pre', '', events.filter(e => e.kind !== 'delta').map(e => `${e.kind}\n${e.payload}`).join('\n\n') || 'No lifecycle events yet. Output updates are shown in the conversation.'), close);
+    dialog.addEventListener('click', event => { if (event.target === dialog) dismissDialog(dialog); });
+    dialog.addEventListener('cancel', event => { event.preventDefault(); dismissDialog(dialog); });
     dialog.addEventListener('close', () => dialog.remove()); document.body.append(dialog); dialog.showModal();
   } catch (e) { showError(e); }
 }
 function render() {
   const pip = selectedPip(); $('welcome').hidden = Boolean(pip); $('chat').hidden = !pip; $('composer-wrap').hidden = !pip || Boolean(pip.archived);
-  $('current-name').textContent = pip?.name || 'Pips'; $('conversation-subtitle').textContent = pip ? 'Your private conversation' : 'Your private AI team'; document.title = pip ? `${pip.name} · Pips` : 'Pips — Your private AI team';
-  renderNav(); renderDetails(pip); renderChat(pip);
+  $('details-toggle').hidden = !pip;
+  $('current-name').textContent = pip?.name || 'Home'; $('conversation-subtitle').textContent = pip ? 'Your private conversation' : 'Your Pips, in one place'; document.title = pip ? `${pip.name} · Pips` : 'Home · Pips';
+  renderNav(); renderDetails(pip); renderChat(pip); renderHome();
 }
 async function refresh() {
   if (state.loading) return; state.loading = true;
   try {
-    const [pips, runtime, catalog, session] = await Promise.all([api('/api/pips'), api('/api/runtime'), api('/api/models'), api('/api/session')]); state.pips = pips; state.models = catalog.models || []; state.csrf = session.csrf_token || null; renderModels();
+    const [pips, runtime, catalog, session] = await Promise.all([api('/api/pips'), api('/api/runtime'), api('/api/models'), api('/api/session')]); state.pips = pips; state.models = catalog.models || []; state.csrf = session.csrf_token || null; state.user = session; renderModels();
     $('worker-status').textContent = runtime.status.replaceAll('_', ' ');
     $('runtime-help').textContent = runtime.status === 'ready' ? 'Ready for work. All Pips share your subscription allowance.' : runtime.status === 'unavailable' ? 'Start the worker and check its logs. Codex may need subscription login.' : 'Start the worker to process queued messages. Your conversations stay saved.';
     const requested = state.selected;
@@ -135,9 +189,13 @@ async function refresh() {
   finally { state.loading = false; }
 }
 $('new-pip').onclick = () => openEditor();
+$('home-brand').onclick = event => { event.preventDefault(); showHome(); };
 document.querySelectorAll('[data-template]').forEach(node => { node.onclick = () => openEditor(null, templates[node.dataset.template]); });
-$('close-dialog').onclick = () => $('pip-dialog').close();
-$('settings').onclick = () => $('workspace-dialog').showModal(); $('close-workspace').onclick = () => $('workspace-dialog').close();
+document.querySelectorAll('[data-color-choice]').forEach(node => { node.onclick = () => { $('pip-color').value = node.dataset.colorChoice; updateCreatorPreview(); }; });
+document.querySelectorAll('[data-shape-choice]').forEach(node => { node.onclick = () => { $('pip-shape').value = node.dataset.shapeChoice; updateCreatorPreview(); }; });
+$('pip-name').oninput = updateCreatorPreview;
+$('close-dialog').onclick = () => dismissDialog($('pip-dialog'));
+$('settings').onclick = () => $('workspace-dialog').showModal(); $('close-workspace').onclick = () => dismissDialog($('workspace-dialog'));
 $('error').querySelector('button').onclick = () => { $('error').hidden = true; };
 $('search').oninput = renderNav;
 $('show-archived').onclick = () => { state.archived = !state.archived; renderNav(); };
@@ -145,12 +203,17 @@ $('menu').onclick = () => $('sidebar').classList.toggle('open');
 $('sidebar-scrim').onclick = () => $('sidebar').classList.remove('open');
 $('details-toggle').onclick = () => { $('details').classList.toggle('open'); $('details').classList.toggle('collapsed'); };
 $('close-details').onclick = () => $('details').classList.remove('open');
-$('model').onchange = () => localStorage.setItem('pips:model', $('model').value);
+$('model-trigger').onclick = event => {
+  event.stopPropagation(); const menu = $('model-menu'); const willOpen = menu.hidden || menu.classList.contains('is-closing');
+  clearTimeout(modelMenuTimer); menu.classList.remove('is-closing'); menu.hidden = !willOpen; $('model-trigger').setAttribute('aria-expanded', String(willOpen));
+  if (willOpen) menu.querySelector('[aria-selected="true"]')?.focus();
+};
+$('model-menu').onclick = event => event.stopPropagation();
 document.querySelectorAll('[data-theme]').forEach(button => { button.onclick = () => applyTheme(button.dataset.theme); });
 $('pip-form').onsubmit = async event => {
   event.preventDefault(); $('save-pip').disabled = true;
   try {
-    const body = { name: $('pip-name').value.trim(), instructions: $('pip-instructions').value.trim(), color: $('pip-color').value };
+    const body = { name: $('pip-name').value.trim(), instructions: $('pip-instructions').value.trim(), color: $('pip-color').value, shape: $('pip-shape').value };
     if (!body.name) throw Error('Give your Pip a name');
     const pip = await api(state.editing ? '/api/pips/' + state.editing : '/api/pips', { method: state.editing ? 'PATCH' : 'POST', body });
     $('pip-dialog').close(); state.archived = Boolean(pip.archived); state.pips = state.pips.filter(p => p.id !== pip.id).concat(pip); selectPip(pip.id);
@@ -175,6 +238,14 @@ $('composer').onsubmit = async event => {
 $('prompt').oninput = () => { localStorage.setItem('pips:draft:' + state.selected, $('prompt').value); $('prompt').style.height = 'auto'; $('prompt').style.height = Math.min($('prompt').scrollHeight, 200) + 'px'; };
 $('prompt').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('composer').requestSubmit(); } };
 document.addEventListener('keydown', event => { if (event.key.toLowerCase() === 'n' && !event.ctrlKey && !event.metaKey && !event.altKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && !document.querySelector('dialog[open]')) { event.preventDefault(); openEditor(); } });
+document.addEventListener('click', event => {
+  closeModelMenu();
+  if ($('details').classList.contains('open') && !$('details').contains(event.target) && !$('details-toggle').contains(event.target)) $('details').classList.remove('open');
+});
+document.querySelectorAll('dialog').forEach(dialog => {
+  dialog.addEventListener('click', event => { if (event.target === dialog) dismissDialog(dialog); });
+  dialog.addEventListener('cancel', event => { event.preventDefault(); dismissDialog(dialog); });
+});
 $('prompt').value = localStorage.getItem('pips:draft:' + state.selected) || '';
 applyTheme(localStorage.getItem('pips:theme') || 'system');
 setInterval(() => { if (!document.hidden) refresh(); }, 1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); }); refresh();

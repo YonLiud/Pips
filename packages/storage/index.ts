@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS auth_flows(state_hash TEXT PRIMARY KEY,code_verifier 
 CREATE TABLE IF NOT EXISTS auth_sessions(token_hash TEXT PRIMARY KEY,issuer TEXT NOT NULL,subject TEXT NOT NULL,email TEXT,name TEXT,csrf_token TEXT NOT NULL,created TEXT NOT NULL,last_seen TEXT NOT NULL,expires TEXT NOT NULL);
 `);
 const columns = new Set(db.prepare('PRAGMA table_info(pips)').all().map((c: any) => c.name));
-for (const [name, definition] of [['instructions', "TEXT NOT NULL DEFAULT ''"], ['color', "TEXT NOT NULL DEFAULT 'mint'"], ['archived', 'INTEGER NOT NULL DEFAULT 0']]) {
+for (const [name, definition] of [['instructions', "TEXT NOT NULL DEFAULT ''"], ['color', "TEXT NOT NULL DEFAULT 'violet'"], ['shape', "TEXT NOT NULL DEFAULT 'round'"], ['archived', 'INTEGER NOT NULL DEFAULT 0']]) {
   if (!columns.has(name)) db.exec(`ALTER TABLE pips ADD COLUMN ${name} ${definition}`);
 }
 if (!db.prepare('PRAGMA table_info(runs)').all().some((c: any) => c.name === 'request_id')) db.exec('ALTER TABLE runs ADD COLUMN request_id TEXT');
@@ -28,9 +28,9 @@ export function event(runId: string, kind: string, payload: unknown) {
 export function runtime(status: string) {
   db.prepare('INSERT INTO runtime VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,updated=excluded.updated').run(status, new Date().toISOString());
 }
-export function createPip(name: string, instructions = '', color = 'mint') {
+export function createPip(name: string, instructions = '', color = 'violet', shape = 'round') {
   const id = randomUUID();
-  db.prepare('INSERT INTO pips(id,name,thread_id,created,instructions,color) VALUES(?,?,NULL,?,?,?)').run(id, name, new Date().toISOString(), instructions, color);
+  db.prepare('INSERT INTO pips(id,name,thread_id,created,instructions,color,shape) VALUES(?,?,NULL,?,?,?,?)').run(id, name, new Date().toISOString(), instructions, color, shape);
   return db.prepare('SELECT * FROM pips WHERE id=?').get(id);
 }
 export function enqueue(pipId: string, prompt: string, requestId: string | null = null, model: string | null = null) {

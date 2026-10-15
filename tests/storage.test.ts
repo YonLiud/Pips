@@ -10,8 +10,8 @@ test('queue claims once, separates Pip histories and persists across connections
   const { db, createPip, enqueue, claim, event } = await import('../packages/storage/index.ts');
   try {
     const a: any = createPip('A'); const b: any = createPip('B');
-    const profile: any = createPip('Scout', 'Investigate evidence', 'violet');
-    assert.equal(profile.instructions, 'Investigate evidence'); assert.equal(profile.color, 'violet'); assert.equal(profile.archived, 0);
+    const profile: any = createPip('Scout', 'Investigate evidence', 'violet', 'hex');
+    assert.equal(profile.instructions, 'Investigate evidence'); assert.equal(profile.color, 'violet'); assert.equal(profile.shape, 'hex'); assert.equal(profile.archived, 0);
     const first: any = enqueue(a.id, 'Task A'); const second: any = enqueue(b.id, 'Task B');
     const claimed: any = claim(); const other: any = claim();
     assert.equal(claimed.id, first.id); assert.equal(other.id, second.id); assert.equal(claim(), undefined);
